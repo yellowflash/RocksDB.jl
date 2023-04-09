@@ -24,16 +24,17 @@ function close_db(db)
     @threadcall( (:rocksdb_close, librocksdb), Nothing, (Ptr{Nothing},), db)
 end
 
-function db_put(db, key, value; raw=false)
+function db_put_raw(db, key, value)
     options = @threadcall( (:rocksdb_writeoptions_create, librocksdb), Ptr{Nothing}, ())
     k = byte_array(key, endian_conv=true)
-    v = raw ? value : byte_array(value)
     err = Ptr{UInt8}[0]
     @threadcall( (:rocksdb_put, librocksdb), Nothing,
           (Ptr{Nothing}, Ptr{Nothing}, Ptr{UInt8}, UInt, Ptr{UInt8}, UInt, Ptr{Ptr{UInt8}} ),
-          db, options,k, length(k), v, length(v), err)
+          db, options,k, length(k), value, length(value), err)
     check_err(err)
 end
+
+db_put(db, key, value; raw=false) = db_put_raw(db, key, raw ? value : byte_array(value))
 
 function db_put_sync(db, key, value; raw=false)
     options = @threadcall( (:rocksdb_writeoptions_create, librocksdb), Ptr{Nothing}, ())
@@ -47,8 +48,7 @@ function db_put_sync(db, key, value; raw=false)
                  db, options,k, length(k), v, length(v), err)
     check_err(err)
 end
-
-function db_get(db, key; raw=false)
+function db_get_raw(db, key)
     # rocksdb_get will allocate the buffer for return value
     options = @threadcall( (:rocksdb_readoptions_create, librocksdb), Ptr{Nothing}, ())
     err = Ptr{UInt8}[0]
@@ -60,8 +60,14 @@ function db_get(db, key; raw=false)
     check_err(err)
 
     s = unsafe_wrap(Array, value, (val_len[1],), own=true)
-    return val_len[1] == 0 ? nothing : (raw ? s : array_to_type(s))
+    return val_len[1] == 0 ? nothing : s
 end
+
+function db_get(db, key; raw=false)
+    value = db_get_raw(db, key)
+    return value === nothing ? nothing : (raw ? s : array_to_type(s))
+end
+
 
 function db_delete(db, key)
     options = @threadcall( (:rocksdb_writeoptions_create, librocksdb), Ptr{Nothing}, ())
